@@ -8,27 +8,53 @@
 * Author URI: https://timanema.net
 * License: MIT
 */
-
-function get_data() {
+function get_data($ip) {
     return json_encode(array(
-        'source' => '10.42.42.42',
+        'source' => $ip,
         'service' => 'wordpress',
         'timestamp' => time()
     ));
 }
 
-add_action( 'wp_login_failed', function( $username ) {
+function get_client_ip() {
+    $ipaddress = '';
+    if (isset($_SERVER['HTTP_CLIENT_IP']))
+        $ipaddress = $_SERVER['HTTP_CLIENT_IP'];
+    else if(isset($_SERVER['HTTP_X_FORWARDED_FOR']))
+        $ipaddress = $_SERVER['HTTP_X_FORWARDED_FOR'];
+    else if(isset($_SERVER['HTTP_X_FORWARDED']))
+        $ipaddress = $_SERVER['HTTP_X_FORWARDED'];
+    else if(isset($_SERVER['HTTP_FORWARDED_FOR']))
+        $ipaddress = $_SERVER['HTTP_FORWARDED_FOR'];
+    else if(isset($_SERVER['HTTP_FORWARDED']))
+        $ipaddress = $_SERVER['HTTP_FORWARDED'];
+    else if(isset($_SERVER['REMOTE_ADDR']))
+        $ipaddress = $_SERVER['REMOTE_ADDR'];
+    else
+        $ipaddress = 'UNKNOWN';
+    return $ipaddress;
+}
+
+add_action('wp_login_failed', function() {
+    $ip = get_client_ip();
+    $data = get_data($ip);
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "http://10.8.0.48:8080/api/entries/add/10.42.42.42");
+    curl_setopt($ch, CURLOPT_URL, 'http://192.168.42.78:8080/api/entries/add/' . $ip);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json','Content-Length: ' . strlen($data)));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
     curl_exec($ch);
-    $statusCode = curl_getInfo($channel, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
+    curl_close($ch);    
+});
+
+add_action('wp_authenticate', function() {
+    $ip = get_client_ip();
+    $json = file_get_contents('http://192.168.42.78:8080/api/blocked/'. $ip);
+    $data = json_decode($json);
     
-    wp_die('code:' . $statusCode . ', err: ' . $err);
-} );
+    if ($data->{'blocked'} == 'true') {
+        wp_die('Your IP has been temporarily blocked due to too many failed login attempts.');
+    }
+});
